@@ -1,0 +1,87 @@
+#!/usr/bin/perl
+use strict;
+use File::Basename;
+use Getopt::Long;
+
+use Time::HiRes;
+
+my $script = basename $0;
+
+sub usage {
+    my ($err) = @_;
+    if ($err) {
+        print "*Error*: $err\n";
+    }
+    print <<END;
+$script [ -f | --flush ] [ -d | --date ]
+
+Reads STDIN and prints it out again, but with an "ISO 8601.millisecond"
+timestamp prepended
+
+It is very handy to use "pty" along with that, so you don't get line buffering in the pipe, such as in:
+
+    \$ pty some-command | $script
+
+or even
+
+    \$ pty some-command | $script -f > logfile &
+    \$ tail -f logfile
+
+
+Options:
+
+-f | --flush: Flush STDOUT on every line
+-d | --date:  Include the date, not just the time
+END
+    exit 1;
+}
+
+my %options;
+my $getopt = new Getopt::Long::Parser;
+$getopt->configure('gnu_getopt');
+$getopt->configure('require_order');
+$getopt->getoptions(
+    \%options,
+    'help|h|?',
+    'flush|f',
+    'date|d',
+    )
+    or die "Couldn't GetOptions";
+
+if ( $options{help} ) {
+    usage();
+}
+
+if ( $options{flush} ) {
+    $|=1;
+}
+
+# DateTime is just too damn slow...
+#
+# Using localtime() and Time::HiRes for 1000 lines takes 47ms on my machine,
+# while doing it with DateTime takes 9.324s. So it is almost 200 times faster
+# to do it "by hand". If you know of a faster, better way, let me know...
+#
+# use DateTime;
+
+# Maybe include the date
+my $format = ( $options{date} ? "%04d-%02d-%02d " : '') . 
+             "%02d:%02d:%02d.%03d: %s";
+while ( my $line = <> ) {
+
+    my $time = Time::HiRes::time;
+
+    # DateTime is just too damn slow...
+    #
+    #  my $dt = DateTime->from_epoch(epoch => $time, 'time_zone' => 'local');
+    #  printf "%s %s.%03d %s",
+    #      $dt->ymd(), $dt->hms(), $dt->nanosecond / 1e6, $line;
+
+    my ( $sec, $min, $hour, $mday, $mon, $year ) =
+        localtime(int($time));
+    printf $format,
+           # Maybe include the date
+           ( $options{date} ? ( $year + 1900, $mon + 1, $mday) : () ),
+           $hour, $min, $sec, ( int(1000 * ($time - int($time)))),
+           $line;
+}

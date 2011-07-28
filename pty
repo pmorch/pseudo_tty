@@ -1,0 +1,143 @@
+#!/usr/bin/perl -w
+use strict;
+use File::Basename;
+use Getopt::Long;
+use Pod::Usage;
+
+use IPC::Run qw(run start pump finish harness);
+use Time::HiRes qw(time);
+
+=head1 SYNOPSIS
+
+    pty some-command | grep something
+
+or
+
+    pty some-command | timestamplines
+
+pty - A tool to solve the "line buffering problem" forcing arbitrary commands
+to flush their output. Handy in scripts and command lines where you want to see
+output run-time
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--help|-h|-?>
+
+Print a brief help message and exits.
+
+=item B<--man>
+
+Prints the manual page and exits.
+
+=item B<--debug>
+
+Will print a message to STDOUT when signals occur. (Currently that is all the debugging that is present).
+
+=item B<--debugFile <file>>
+
+If provided, also print --debug messages to <file>. Implies I<--debug>
+
+=back
+
+=head1 DESCRIPTTION
+
+It solves the "line buffering problem" by running "command <parameters>" in a
+sub process and gives it a pseudo tty so it flushes it's output, and lines will
+be printed as they occur, not when some-command is finished or when the pipe
+buffer gets full.
+
+It works well with timestamplines as in:
+
+    pty some-command | timestamplines
+
+which will prepend any output from some-command with a timestamp - handy for
+debugging.
+
+Note that because it uses a pseudo tty, but STDOUT and STDERR from some-command
+will be sent to STDOUT from pty
+
+=head2 Signal Handling
+
+Any PIPE TERM INT KILL or QUIT signals are sent to some-command, so CTRL-C does
+"the sane thing".
+
+=head1 BUGS/TODO
+
+When signals have been handled (e.g. because of CTRL-C), detecting the exit
+code of the child and propagating it is unreliable.
+
+=cut
+
+my %options;
+my $getopt = new Getopt::Long::Parser;
+$getopt->configure('gnu_getopt');
+$getopt->configure('require_order');
+$getopt->getoptions(
+    \%options,
+    'help|h|?',
+    'man',
+    'debug|d',
+    'debugFile=s'
+) or die "Couldn't GetOptions";
+
+pod2usage(1) if $options{help};
+pod2usage(-exitstatus => 0, -verbose => 2) if $options{man};
+
+my $harness;
+
+$options{debug} = 1
+    if $options{debugFile};
+
+sub debug {
+    if (exists $options{debug}) {
+        print @_, "\n";
+        if ($options{debugFile}) {
+            open O, '>>', $options{debugFile}
+                or die "Couldn't open $options{debugFile} for writing";
+            print O @_, "\n";
+            close O or die "Couldn't close $options{debugFile}";
+        }
+    }
+}
+
+foreach my $signal (qw(PIPE TERM INT KILL QUIT)) {
+    $SIG{$signal} = sub {
+        debug "Parent got '$signal' ", @_;
+        if (defined $harness) {
+            debug "Sending '$signal' to child";
+            $harness->signal($signal);
+        }
+    };
+}
+
+foreach my $signal ('__WARN__', '__DIE__') {
+    $SIG{$signal} = sub {
+        return if $^S;
+        debug "Parent got '$signal' ", @_;
+        exit;
+    }
+}
+
+# The real meat is just these lines
+
+sub printOutput {
+    my ($msg) = @_;
+    $| = 1;
+    print $msg;
+}
+
+$harness = harness \@ARGV, '>pty>', \&printOutput ;
+# This can fail if a signal was sent to the child.
+eval {
+    run $harness;
+};
+
+# Propagate exit code form child
+if ($@) {
+    # We have no idea what the exit code really was
+    exit 2;
+}
+# result gives us any non-zero exit code
+exit $harness->result(0) || 0;

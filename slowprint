@@ -1,0 +1,17 @@
+#!/usr/bin/perl -w
+use strict;
+use Time::HiRes;
+
+my $n = $ARGV[0] // 20;
+
+foreach my $signal (qw(TERM INT KILL QUIT)) {
+    $SIG{$signal} = sub {
+        print "Signal '$signal' received\n";
+        exit;
+    };
+}
+for (1..$n) {
+    print $_, "\n";
+    Time::HiRes::sleep 0.5;
+}
+exit 0;
