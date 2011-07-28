@@ -1,0 +1,32 @@
+=head1 pseudo_tty
+
+Here are two tiny utilities, B<pty> and B<timestamplines>.
+
+In concert, they allow you to timestamp the output of an arbitrary command like
+so:
+
+    $ pty some-command | timestamplines
+
+or
+
+    $ pty some-command | timestamplines -f > log &
+    $ tail -f log
+
+=head1 Scripts
+
+=over 8
+
+=item B<pty>
+
+Run a script so that it thinks it is is connected to a terminal, and therefore
+flushes its output after every line. It solves the "line buffering problem".
+
+=item B<timestamplines>
+
+Print all lines on STDIN to STDOUT but prepend a time stamp.
+
+=item B<slowprint>
+
+Also provided is slowprint to test it
+
+=back
